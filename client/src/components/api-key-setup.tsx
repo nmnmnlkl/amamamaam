@@ -1,10 +1,10 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { apiRequest } from "@/lib/queryClient";
+import { jafrApi } from "@/lib/api";
 
 interface ApiKeySetupProps {
   onApiKeySet: () => void;
@@ -15,46 +15,83 @@ export default function ApiKeySetup({ onApiKeySet }: ApiKeySetupProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  // Auto-focus the input when component mounts
+  const inputRef = React.useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
+
+  const validateApiKey = (key: string): string | null => {
+    const trimmedKey = key.trim();
+    
+    if (!trimmedKey) {
+      return "يرجى إدخال مفتاح API";
+    }
+
+    if (!trimmedKey.startsWith("sk-")) {
+      return "يجب أن يبدأ مفتاح API بـ 'sk-'. تأكد من نسخ المفتاح بالكامل.";
+    }
+
+    if (trimmedKey.length < 30) {
+      return "يبدو أن مفتاح API قصير جدًا. يرجى التأكد من نسخ المفتاح بالكامل.";
+    }
+
+    return null;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate API key format
+    const validationError = validateApiKey(apiKey);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
     const trimmedKey = apiKey.trim();
-    if (!trimmedKey) {
-      setError("يرجى إدخال مفتاح API");
-      return;
-    }
-
-    // Basic validation for API key format
-    if (!trimmedKey.startsWith("sk-")) {
-      setError("يجب أن يبدأ مفتاح API بـ 'sk-'");
-      return;
-    }
-
     setIsLoading(true);
     setError("");
+    setShowSuccess(false);
     setIsTestingConnection(true);
 
     try {
-      // Test the API key by making a test request
-      const response = await apiRequest("POST", "/api/test-api-key", { 
-        apiKey: trimmedKey
-      });
+      // Test the API key
+      const { success, error: apiError } = await jafrApi.testApiKey(trimmedKey);
       
-      if (response.ok) {
-        // Store the API key in localStorage for this session
+      if (success) {
+        // Store the API key in both localStorage and sessionStorage
         localStorage.setItem("openrouter_api_key", trimmedKey);
-        // Also store it in sessionStorage for immediate use
         sessionStorage.setItem("openrouter_api_key", trimmedKey);
+        
+        // Show success state
+        setShowSuccess(true);
+        setError("");
+        
+        // Add a small delay for better UX
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Notify parent component
         onApiKeySet();
       } else {
-        const errorData = await response.json().catch(() => ({}));
-        setError(errorData.message || "مفتاح API غير صحيح أو غير مفعل");
+        // Clear any stored keys
+        localStorage.removeItem("openrouter_api_key");
+        sessionStorage.removeItem("openrouter_api_key");
+        
+        setError(apiError || "مفتاح API غير صالح. يرجى التحقق والمحاولة مرة أخرى.");
       }
     } catch (error: any) {
       console.error("API key validation error:", error);
-      const errorMessage = error.message || "حدث خطأ في الاتصال بالخادم";
-      setError(`فشل التحقق من المفتاح: ${errorMessage}`);
+      
+      // Clear any stored keys on error
+      localStorage.removeItem("openrouter_api_key");
+      sessionStorage.removeItem("openrouter_api_key");
+      
+      setError("حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى لاحقًا.");
     } finally {
       setIsLoading(false);
       setIsTestingConnection(false);

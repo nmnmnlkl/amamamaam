@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { apiRequest } from "@/lib/queryClient";
 import { calculateBasicNumerology, getBasicMeaning, reduceToSingleDigit } from "@/lib/jafr-utils";
+import { jafrApi } from "@/lib/api";
 import ApiKeySetup from "@/components/api-key-setup";
 import type { JafrAnalysisRequest, JafrAnalysisResponse } from "@shared/schema";
 
@@ -23,7 +24,24 @@ export default function JafrCalculator() {
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
   const [showProgress, setShowProgress] = useState(false);
-  const [results, setResults] = useState<JafrAnalysisResponse | null>(null);
+  interface TraditionalResults {
+    nameAnalysis: { total: number; details: { value: number; char: string }[] };
+    motherAnalysis: { total: number; details: { value: number; char: string }[] };
+    questionAnalysis: { total: number; details: { value: number; char: string }[] };
+    totalValue: number;
+    reducedValue: number;
+    wafqSize: number;
+  }
+
+  interface AnalysisResults {
+    traditionalResults: TraditionalResults;
+    aiAnalysis?: any;
+    combinedInterpretation?: any;
+    message?: string;
+    success?: boolean;
+  }
+
+  const [results, setResults] = useState<AnalysisResults | null>(null);
   const [error, setError] = useState("");
   const [hasApiKey, setHasApiKey] = useState(false);
 
@@ -35,52 +53,89 @@ export default function JafrCalculator() {
 
   const analysisMutation = useMutation({
     mutationFn: async (data: JafrAnalysisRequest): Promise<JafrAnalysisResponse> => {
-      // Get API key from localStorage or sessionStorage
-      const apiKey = localStorage.getItem("openrouter_api_key") || 
-                    sessionStorage.getItem("openrouter_api_key");
+      const { success, data: responseData, error } = await jafrApi.analyze(data);
       
-      if (!apiKey) {
-        throw new Error("لم يتم العثور على مفتاح API. يرجى إدخال مفتاح API صالح.");
+      if (!success) {
+        // Handle API key related errors
+        if (error?.includes('API') || error?.includes('مفتاح') || error?.includes('مصادقة')) {
+          localStorage.removeItem("openrouter_api_key");
+          sessionStorage.removeItem("openrouter_api_key");
+          setHasApiKey(false);
+          throw new Error(error || "مشكلة في مصادقة API. يرجى التأكد من صحة المفتاح.");
+        }
+        
+        throw new Error(error || "حدث خطأ أثناء معالجة طلبك");
       }
-
-      const requestData = { 
-        ...data, 
-        apiKey: apiKey 
+      
+      return responseData as JafrAnalysisResponse;
+    },
+    onSuccess: (data: any) => {
+      // Set the results with proper typing
+      const responseData = data as AnalysisResults;
+      const resultsData: AnalysisResults = {
+        traditionalResults: responseData.traditionalResults || {
+          nameAnalysis: { total: 0, details: [] },
+          motherAnalysis: { total: 0, details: [] },
+          questionAnalysis: { total: 0, details: [] },
+          totalValue: 0,
+          reducedValue: 0,
+          wafqSize: 0
+        },
+        aiAnalysis: responseData.aiAnalysis,
+        combinedInterpretation: responseData.combinedInterpretation,
+        message: responseData.message || 'تم التحليل بنجاح',
+        success: responseData.success !== false // Default to true if not specified
       };
       
-      const response = await apiRequest("POST", "/api/jafr/analyze", requestData);
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "فشل في تحليل البيانات");
-      }
-      
-      return response.json();
-    },
-    onSuccess: (data) => {
-      setResults(data);
+      setResults(resultsData);
       setShowProgress(false);
       setError("");
-      // Scroll to results
+      
+      // Log success message
+      if (resultsData.message) {
+        console.log("Analysis successful:", resultsData.message);
+      } else if (resultsData.success) {
+        console.log("Analysis completed successfully");
+      }
+      
+      // Scroll to results with smooth animation
       setTimeout(() => {
         const resultsElement = document.getElementById('analysis-results');
         if (resultsElement) {
-          resultsElement.scrollIntoView({ behavior: 'smooth' });
+          resultsElement.scrollIntoView({ 
+            behavior: 'smooth',
+            block: 'start'
+          });
         }
       }, 100);
     },
     onError: (error: any) => {
       console.error("Analysis error:", error);
-      const errorMessage = error.message || "حدث خطأ غير متوقع أثناء التحليل";
+      
+      // Default error message
+      let errorMessage = "حدث خطأ غير متوقع أثناء التحليل";
+      
+      // More specific error messages based on error type
+      if (error.message) {
+        errorMessage = error.message;
+        
+        // Handle API key related errors
+        if (error.message.includes('API') || error.message.includes('مفتاح')) {
+          localStorage.removeItem("openrouter_api_key");
+          sessionStorage.removeItem("openrouter_api_key");
+          setHasApiKey(false);
+        }
+      }
+      
       setError(errorMessage);
       setShowProgress(false);
       
-      // If the error is related to API key, clear the stored key
-      if (error.message?.includes('API') || error.message?.includes('مفتاح')) {
-        localStorage.removeItem("openrouter_api_key");
-        sessionStorage.removeItem("openrouter_api_key");
-        setHasApiKey(false);
-      }
+      // Auto-hide error after 10 seconds
+      const errorTimeout = setTimeout(() => {
+        setError("");
+      }, 10000);
+      
+      return () => clearTimeout(errorTimeout);
     }
   });
 
