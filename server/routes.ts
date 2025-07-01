@@ -91,6 +91,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         error: errorData.error || 'حدث خطأ غير متوقع'
       });
+    } catch (error) {
+      console.error('Error validating API key:', error);
+      return res.status(500).json({
+        valid: false,
+        message: error instanceof Error ? error.message : 'حدث خطأ غير متوقع أثناء التحقق من صحة المفتاح',
+        success: false
+      });
+    }
+  });
+
+  // API Key Validation Endpoint
+  app.post("/api/validate-key", async (req, res) => {
+    try {
+      const { apiKey } = req.body;
+      
+      if (!apiKey) {
+        return res.status(400).json({ 
+          valid: false, 
+          message: "مطلوب إدخال مفتاح API" 
+        });
+      }
+      
+      // Test the API key by making a request to OpenRouter
+      const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(10000) // 10 seconds timeout
+      }).catch(error => {
+        console.error('Network error validating API key:', error);
+        throw new Error('تعذر الاتصال بخادم OpenRouter. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.');
+      });
+      
+      // Handle rate limiting
+      if (response.status === 429) {
+        const retryAfter = response.headers.get('Retry-After') || '60';
+        return res.status(429).json({
+          valid: false,
+          message: `تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد ${retryAfter} ثانية.`,
+          retryAfter: parseInt(retryAfter, 10)
+        });
+      }
+      
+      // Handle successful response
+      if (response.status === 200) {
+        const data = await response.json().catch(() => ({}));
+        
+        return res.json({ 
+          valid: true, 
+          message: "تم التحقق من صحة المفتاح بنجاح",
+          data: {
+            name: data.name || 'غير معروف',
+            credits: data.credits || 0,
+            expiresAt: data.expires_at || null,
+          }
+        });
+      } 
+      
+      // Handle unauthorized/forbidden
+      if (response.status === 401 || response.status === 403) {
+        return res.status(401).json({ 
+          valid: false, 
+          message: "مفتاح API غير صالح أو منتهي الصلاحية" 
+        });
+      }
+      
+      // Handle other error responses
+      const errorData = await response.json().catch(() => ({}));
+      return res.status(response.status).json({
+        valid: false,
+        message: errorData.message || `خطأ في الخادم: ${response.statusText}`,
+        success: false,
+        error: errorData.error || 'حدث خطأ غير متوقع'
+      });
+    } catch (error) {
+      console.error('Error validating API key:', error);
+      return res.status(500).json({
+        valid: false,
+        message: error instanceof Error ? error.message : 'حدث خطأ غير متوقع أثناء التحقق من صحة المفتاح',
+        success: false
+      });
     }
   });
 
