@@ -21,9 +21,14 @@ const abjad: Record<string, number> = {
   'أ': 1, 'إ': 1, 'آ': 1, 'ة': 5, 'ؤ': 6, 'ئ': 10, 'ى': 10
 };
 
-function calculateBasicNumerology(text: string) {
+interface NumerologyDetail {
+  char: string;
+  value: number;
+}
+
+function calculateBasicNumerology(text: string): { total: number; details: NumerologyDetail[] } {
   const cleanText = text.replace(/[^\u0600-\u06FF]/g, '');
-  const details = [];
+  const details: NumerologyDetail[] = [];
   let total = 0;
 
   for (const char of cleanText) {
@@ -122,10 +127,11 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       headers: {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Content-Type': 'text/plain'
       },
       body: ''
-    };
+    } as const;
   }
 
   try {
@@ -137,17 +143,35 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         statusCode: 200,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
         },
         body: JSON.stringify({
           status: "healthy",
           service: "نظام الجفر الذكي المتقدم",
           timestamp: new Date().toISOString()
         })
-      };
+      } as const;
     }
 
     // Test API Key
+    if (event.httpMethod === 'GET' && path === '/test-api-key') {
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
+        },
+        body: JSON.stringify({
+          success: true,
+          message: 'API key is valid',
+          timestamp: new Date().toISOString()
+        })
+      } as const;
+    }
     if (event.httpMethod === 'POST' && path === '/test-api-key') {
       const body = JSON.parse(event.body || '{}');
       const { apiKey } = body;
@@ -157,13 +181,15 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
           statusCode: 400,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
           },
           body: JSON.stringify({
             success: false,
             message: "مفتاح API مطلوب"
           })
-        };
+        } as const;
       }
 
       // Simple API key test
@@ -176,25 +202,29 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
           statusCode: 200,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
           },
           body: JSON.stringify({
             success: testResponse.ok,
             message: testResponse.ok ? "مفتاح API صالح وجاهز للاستخدام" : "مفتاح API غير صالح"
           })
-        };
+        } as const;
       } catch (error) {
         return {
           statusCode: 400,
           headers: {
             'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*'
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
           },
           body: JSON.stringify({
             success: false,
             message: "مفتاح API غير صالح أو منتهي الصلاحية"
           })
-        };
+        } as const;
       }
     }
 
@@ -247,10 +277,12 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         statusCode: 200,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
         },
         body: JSON.stringify(response)
-      };
+      } as const;
     }
 
     // Route not found
@@ -258,10 +290,12 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
       statusCode: 404,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
       },
       body: JSON.stringify({ message: "Route not found" })
-    };
+    } as const;
 
   } catch (error) {
     console.error("Function error:", error);
@@ -271,24 +305,28 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
         statusCode: 400,
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*'
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
         },
         body: JSON.stringify({
           message: "بيانات غير صحيحة",
-          errors: error.errors.map(e => e.message)
+          errors: error.errors.map((e: { message: string }) => e.message)
         })
-      };
+      } as const;
     }
     
     return {
       statusCode: 500,
       headers: {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
       },
       body: JSON.stringify({
         message: "حدث خطأ في التحليل. يرجى المحاولة مرة أخرى."
       })
-    };
+    } as const;
   }
 };

@@ -7,12 +7,26 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+// Determine the base URL for API requests
+const getApiBaseUrl = () => {
+  // In development, use the Vite proxy (if configured) or relative URL
+  if (import.meta.env.DEV) {
+    return '/api';
+  }
+  // In production, use the Netlify functions path
+  return '/.netlify/functions/api';
+};
+
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(url, {
+  // If the URL is already absolute, use it as is
+  const isAbsoluteUrl = /^https?:\/\//.test(url);
+  const fullUrl = isAbsoluteUrl ? url : `${getApiBaseUrl()}${url}`;
+  
+  const res = await fetch(fullUrl, {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -29,7 +43,12 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey[0] as string, {
+    const url = queryKey[0] as string;
+    // If the URL is already absolute, use it as is
+    const isAbsoluteUrl = /^https?:\/\//.test(url);
+    const fullUrl = isAbsoluteUrl ? url : `${getApiBaseUrl()}${url}`;
+    
+    const res = await fetch(fullUrl, {
       credentials: "include",
     });
 
