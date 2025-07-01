@@ -100,15 +100,43 @@ export async function makeApiRequest<T>(
 
 // Helper function for common API endpoints
 export const jafrApi = {
-  analyze: (data: any) => 
-    makeApiRequest<JafrAnalysisResponse>('/api/jafr/analyze', 'POST', data),
+  analyze: (data: any) => {
+    // Get API key from storage
+    const apiKey = localStorage.getItem("openrouter_api_key") || 
+                  sessionStorage.getItem("openrouter_api_key");
+    
+    if (!apiKey) {
+      return Promise.resolve({
+        success: false,
+        error: "مطلوب مفتاح API. يرجى إدخال مفتاح API صالح أولاً."
+      });
+    }
+    
+    // Include API key in the headers
+    return makeApiRequest<JafrAnalysisResponse>(
+      '/api/jafr/analyze', 
+      'POST', 
+      data,
+      { 
+        requireAuth: true,
+        headers: {
+          'X-API-Key': apiKey
+        }
+      }
+    );
+  },
     
   testApiKey: (apiKey: string) => 
     makeApiRequest<{ valid: boolean; message: string }>(
       '/api/test-api-key', 
       'POST', 
-      { apiKey },
-      { requireAuth: false }
+      {},
+      { 
+        requireAuth: false,
+        headers: {
+          'X-API-Key': apiKey
+        }
+      }
     )
 };
 

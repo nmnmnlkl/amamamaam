@@ -16,6 +16,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!apiKey) {
         return res.status(400).json({ 
           valid: false, 
+          success: false,
           message: "مطلوب مفتاح API" 
         });
       }
@@ -24,6 +25,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (typeof apiKey !== 'string' || !apiKey.startsWith('sk-')) {
         return res.status(400).json({
           valid: false,
+          success: false,
           message: "تنسيق مفتاح API غير صالح. يجب أن يبدأ المفتاح بـ 'sk-'"
         });
       }
@@ -32,71 +34,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (apiKey.length < 30) {
         return res.status(400).json({
           valid: false,
-          message: "مفتاح API قصير جدًا. يرجى التحقق من صحة المفتاح."
+          success: false,
+          message: "مفتاح API قصير جدًا. يرجى التأكد من نسخ المفتاح بالكامل."
         });
       }
       
-      // Make a test request to OpenRouter API
-      const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        // Add timeout to prevent hanging requests
-        signal: AbortSignal.timeout(10000) // 10 seconds timeout
-      }).catch(error => {
-        console.error('Network error testing API key:', error);
-        throw new Error('تعذر الاتصال بخادم OpenRouter. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.');
-      });
+      // Add timeout to prevent hanging requests
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds timeout
       
-      // Handle rate limiting
-      if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After') || '60';
-        return res.status(429).json({
-          valid: false,
-          message: `تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد ${retryAfter} ثانية.`,
-          retryAfter: parseInt(retryAfter, 10)
+      try {
+        // Make a test request to OpenRouter API
+        const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://jafr-analysis.netlify.app',
+            'X-Title': 'Jafr Analysis System'
+          },
+          signal: controller.signal as any
         });
-      }
-      
-      // Handle successful response
-      if (response.status === 200) {
-        const data = await response.json().catch(() => ({}));
         
-        return res.json({ 
-          valid: true, 
-          message: "تم التحقق من صحة المفتاح بنجاح",
-          data: {
-            name: data.name || 'غير معروف',
-            credits: data.credits || 0,
-            expiresAt: data.expires_at || null,
-          }
+        clearTimeout(timeoutId);
+        
+        // Handle rate limiting
+        if (response.status === 429) {
+          const retryAfter = response.headers.get('Retry-After') || '60';
+          return res.status(429).json({
+            valid: false,
+            success: false,
+            message: `تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد ${retryAfter} ثانية.`,
+            retryAfter: parseInt(retryAfter, 10)
+          });
+        }
+        
+        // Handle successful response
+        if (response.ok) {
+          const data = await response.json().catch(() => ({}));
+          
+          return res.json({ 
+            valid: true, 
+            success: true,
+            message: "تم التحقق من صحة المفتاح بنجاح",
+            data: {
+              name: data.name || 'غير معروف',
+              credits: data.credits || 0,
+              expiresAt: data.expires_at || null,
+            }
+          });
+        } 
+        
+        // Handle unauthorized/forbidden
+        if (response.status === 401 || response.status === 403) {
+          return res.status(200).json({ 
+            valid: false,
+            success: false,
+            message: "مفتاح API غير صالح أو منتهي الصلاحية. يرجى التحقق من المفتاح والمحاولة مرة أخرى." 
+          });
+        }
+        
+        // Handle other error responses
+        const errorData = await response.json().catch(() => ({}));
+        return res.status(200).json({
+          valid: false,
+          success: false,
+          message: errorData.error?.message || `خطأ في الخادم: ${response.statusText}`,
+          error: errorData.error || 'حدث خطأ غير متوقع'
         });
-      } 
-      
-      // Handle unauthorized/forbidden
-      if (response.status === 401 || response.status === 403) {
-        return res.status(401).json({ 
-          valid: false, 
-          message: "مفتاح API غير صالح أو منتهي الصلاحية" 
-        });
+        
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        
+        if (error.name === 'AbortError') {
+          throw new Error('انتهت مهلة الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.');
+        }
+        
+        throw error;
       }
       
-      // Handle other error responses
-      const errorData = await response.json().catch(() => ({}));
-      return res.status(response.status).json({
-        valid: false,
-        message: errorData.message || `خطأ في الخادم: ${response.statusText}`,
-        success: false,
-        error: errorData.error || 'حدث خطأ غير متوقع'
-      });
     } catch (error) {
       console.error('Error validating API key:', error);
-      return res.status(500).json({
+      return res.status(200).json({
         valid: false,
+        success: false,
         message: error instanceof Error ? error.message : 'حدث خطأ غير متوقع أثناء التحقق من صحة المفتاح',
-        success: false
+        error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });
@@ -104,12 +127,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // API Key Validation Endpoint
   app.post("/api/validate-key", async (req, res) => {
     try {
-      const { apiKey } = req.body;
+      const apiKey = req.headers['x-api-key'] as string;
       
       if (!apiKey) {
         return res.status(400).json({ 
           valid: false, 
-          message: "مطلوب إدخال مفتاح API" 
+          message: "مطلوب إدخال مفتاح API في رأس الطلب (X-API-Key)",
+          error: "MISSING_API_KEY"
         });
       }
       
@@ -223,13 +247,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     };
     
     try {
-      const { name, motherName, birthDate, apiKey, options = {} } = req.body;
+      const { name, motherName, birthDate, options = {}, question } = req.body;
+      const apiKey = req.headers['x-api-key'] as string;
       
       // Validate required fields
       const missingFields = [];
       if (!name?.trim()) missingFields.push('الاسم');
       if (!motherName?.trim()) missingFields.push('اسم الأم');
-      if (!birthDate?.trim()) missingFields.push('تاريخ الميلاد');
+      if (!question?.trim()) missingFields.push('السؤال');
       
       if (missingFields.length > 0) {
         return res.status(400).json({
@@ -239,42 +264,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Validate API key format
+      if (!apiKey) {
+        return res.status(400).json({
+          success: false,
+          message: "مفتاح API مطلوب. يرجى إدخال مفتاح API صالح.",
+          error: "MISSING_API_KEY"
+        });
+      }
+      
       if (typeof apiKey !== 'string' || !apiKey.startsWith('sk-') || apiKey.length < 30) {
         return res.status(400).json({
           success: false,
-          message: "تنسيق مفتاح API غير صالح"
+          message: "تنسيق مفتاح API غير صالح. يجب أن يبدأ بـ 'sk-' وأن يكون أطول من 30 حرفًا.",
+          error: "INVALID_API_KEY_FORMAT"
         });
       }
 
       // Test the API key first with a timeout
       let keyTest;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-        
+        // Test the API key by making a request to OpenRouter
         keyTest = await fetch('https://openrouter.ai/api/v1/auth/key', {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
+            'HTTP-Referer': 'https://jafr-analysis.netlify.app',
+            'X-Title': 'Jafr Analysis System'
           },
           signal: controller.signal as any
         });
         
         clearTimeout(timeoutId);
+        
+        // Handle rate limiting
+        if (keyTest.status === 429) {
+          const retryAfter = keyTest.headers.get('Retry-After') || '60';
+          return res.status(429).json({
+            success: false,
+            message: `تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد ${retryAfter} ثانية.`,
+            error: 'RATE_LIMIT_EXCEEDED',
+            retryAfter: parseInt(retryAfter, 10)
+          });
+        }
+        
+        // Handle unauthorized/forbidden
+        if (keyTest.status === 401 || keyTest.status === 403) {
+          return res.status(200).json({
+            success: false,
+            message: "مفتاح API غير صالح أو منتهي الصلاحية. يرجى التحقق من المفتاح والمحاولة مرة أخرى.",
+            error: 'INVALID_API_KEY'
+          });
+        }
+        
+        if (!keyTest.ok) {
+          const errorData = await keyTest.json().catch(() => ({}));
+          throw new Error(errorData.error?.message || 'فشل في التحقق من صحة مفتاح API');
+        }
+        
       } catch (error: any) {
+        clearTimeout(timeoutId);
+        
+        if (error.name === 'AbortError') {
+          return res.status(504).json({
+            success: false,
+            message: "انتهت مهلة الاتصال بخادم OpenRouter. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.",
+            error: 'CONNECTION_TIMEOUT'
+          });
+        }
+        
         console.error('API key validation error:', error);
-        return res.status(504).json({
+        return res.status(200).json({
           success: false,
-          message: "انتهت مهلة الاتصال بخادم OpenRouter. يرجى المحاولة مرة أخرى لاحقًا."
-        });
-      }
-
-      if (!keyTest.ok) {
-        const errorData = await keyTest.json().catch(() => ({}));
-        return res.status(401).json({
-          success: false,
-          message: errorData.error?.message || "مفتاح API غير صالح أو منتهي الصلاحية"
+          message: error.message || "حدث خطأ أثناء التحقق من صحة مفتاح API",
+          error: error.error || 'API_KEY_VALIDATION_ERROR'
         });
       }
 
@@ -402,15 +468,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             headers: {
               'Authorization': `Bearer ${apiKey}`,
               'Content-Type': 'application/json',
-              'HTTP-Referer': 'https://jafr-analyzer.com',
-              'X-Title': 'نظام الجفر الذكي'
+              'HTTP-Referer': 'https://jafr-analysis.netlify.app',
+              'X-Title': 'Jafr Analysis System'
             },
             body: JSON.stringify({
-              model: "openai/gpt-3.5-turbo",
+              model: "deepseek/deepseek-chat",
               messages: [
                 {
                   role: "system",
-                  content: `أنت خبير في علم الأرقام وتحليل الشخصية. قم بتحليل الشخصية بناءً على المعلومات المقدمة بطريقة دقيقة ومفصلة.`
+                  content: `أنت خبير في علم الجفر والأرقام. قم بتحليل الشخصية بناءً على المعلومات المقدمة بطريقة دقيقة ومفصلة.`
                 },
                 {
                   role: "user",
@@ -418,7 +484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
               ],
               temperature: 0.7,
-              max_tokens: 2500,
+              max_tokens: 2000,
               top_p: 0.9,
               frequency_penalty: 0.2,
               presence_penalty: 0.2

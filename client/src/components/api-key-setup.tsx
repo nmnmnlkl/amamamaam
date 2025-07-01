@@ -60,11 +60,11 @@ export default function ApiKeySetup({ onApiKeySet }: ApiKeySetupProps) {
     setIsTestingConnection(true);
 
     try {
-      // Test the API key
-      const { success, error: apiError } = await jafrApi.testApiKey(trimmedKey);
+      // Test the API key first
+      const { success, error: apiError, data } = await jafrApi.testApiKey(trimmedKey);
       
       if (success) {
-        // Store the API key in both localStorage and sessionStorage
+        // Store the API key in both storage mechanisms
         localStorage.setItem("openrouter_api_key", trimmedKey);
         sessionStorage.setItem("openrouter_api_key", trimmedKey);
         
@@ -82,7 +82,22 @@ export default function ApiKeySetup({ onApiKeySet }: ApiKeySetupProps) {
         localStorage.removeItem("openrouter_api_key");
         sessionStorage.removeItem("openrouter_api_key");
         
-        setError(apiError || "مفتاح API غير صالح. يرجى التحقق والمحاولة مرة أخرى.");
+        // Handle specific error cases
+        if (apiError?.includes('MISSING_API_KEY')) {
+          setError("مفتاح API مطلوب. يرجى إدخال مفتاح API صالح.");
+        } else if (apiError?.includes('INVALID_API_KEY_FORMAT')) {
+          setError("تنسيق مفتاح API غير صالح. يجب أن يبدأ بـ 'sk-' وأن يكون أطول من 30 حرفًا.");
+        } else if (apiError?.includes('RATE_LIMIT_EXCEEDED')) {
+          setError("تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد 30 دقيقة.");
+        } else if (apiError?.includes('CONNECTION_TIMEOUT') || apiError?.includes('timeout')) {
+          setError("انتهت مهلة الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.");
+        } else if (apiError?.includes('NETWORK_ERROR') || apiError?.includes('Failed to fetch')) {
+          setError("تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.");
+        } else if (apiError?.includes('SERVER_ERROR') || apiError?.includes('500')) {
+          setError("حدث خطأ في الخادم. يرجى المحاولة مرة أخرى لاحقًا.");
+        } else {
+          setError(apiError || "مفتاح API غير صالح. يرجى التحقق والمحاولة مرة أخرى.");
+        }
       }
     } catch (error: any) {
       console.error("API key validation error:", error);
@@ -91,7 +106,15 @@ export default function ApiKeySetup({ onApiKeySet }: ApiKeySetupProps) {
       localStorage.removeItem("openrouter_api_key");
       sessionStorage.removeItem("openrouter_api_key");
       
-      setError("حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى لاحقًا.");
+      // More specific error messages
+      let errorMessage = "حدث خطأ غير متوقع. يرجى المحاولة مرة أخرى لاحقًا.";
+      if (error.message?.includes('Failed to fetch')) {
+        errorMessage = "تعذر الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
     } finally {
       setIsLoading(false);
       setIsTestingConnection(false);
@@ -107,134 +130,124 @@ export default function ApiKeySetup({ onApiKeySet }: ApiKeySetupProps) {
               <div className="flex items-center mb-4">
                 <i className="fas fa-key text-5xl text-amber-600 mr-4"></i>
                 <div>
-                  <CardTitle className="text-3xl text-gray-800 mb-2">إعداد مفتاح OpenRouter</CardTitle>
-                  <Badge className="bg-emerald-500 text-white px-3 py-1 rounded-full text-sm">
-                    <i className="fas fa-robot mr-2"></i>
-                    مطلوب للذكاء الاصطناعي
-                  </Badge>
+                  <h2 className="text-2xl font-bold text-gray-800">إعداد مفتاح OpenRouter API</h2>
+                  <p className="text-gray-600 mt-2">أدخل مفتاح API الخاص بك لتفعيل ميزات التحليل الذكي</p>
                 </div>
               </div>
-              <p className="text-gray-600 text-lg leading-relaxed max-w-lg">
-                لتفعيل ميزات التحليل الذكي المتقدم، نحتاج إلى مفتاح OpenRouter API
-              </p>
             </div>
           </CardHeader>
-
-          <CardContent className="space-y-6">
-            {/* Instructions */}
-            <div className="bg-blue-50 rounded-xl p-6 border border-blue-200">
-              <h3 className="font-bold text-blue-800 mb-4 flex items-center">
-                <i className="fas fa-info-circle mr-2"></i>
-                كيفية الحصول على مفتاح OpenRouter API
-              </h3>
-              <ol className="space-y-3 text-blue-700">
-                <li className="flex items-start">
-                  <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">1</span>
-                  <div>
-                    <strong>زيارة موقع OpenRouter:</strong>
-                    <br />
+          
+          <CardContent>
+            {showSuccess ? (
+              <div className="text-center py-8">
+                <div className="text-green-500 text-5xl mb-4">✓</div>
+                <h3 className="text-2xl font-bold text-green-700 mb-2">تم التحقق من المفتاح بنجاح!</h3>
+                <p className="text-gray-600">جاري تحميل لوحة التحكم...</p>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="space-y-6">
+                <div>
+                  <label htmlFor="apiKey" className="block text-gray-700 font-bold mb-3 text-lg">
+                    <i className="fas fa-key mr-2 text-amber-600"></i>
+                    مفتاح OpenRouter API
+                  </label>
+                  <Input
+                    id="apiKey"
+                    type="password"
+                    placeholder="sk-or-v1-..."
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    className="px-4 py-3 rounded-xl border-2 border-amber-300 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-300 text-lg w-full"
+                    disabled={isLoading}
+                    autoComplete="off"
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    spellCheck={false}
+                  />
+                  <p className="text-sm text-gray-500 mt-2">
+                    احصل على مفتاح API من{' '}
                     <a 
-                      href="https://openrouter.ai/" 
+                      href="https://openrouter.ai/keys" 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 underline"
+                      className="text-blue-500 hover:underline"
                     >
-                      https://openrouter.ai/
+                      OpenRouter
                     </a>
-                  </div>
-                </li>
-                <li className="flex items-start">
-                  <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">2</span>
-                  <span>إنشاء حساب جديد أو تسجيل الدخول</span>
-                </li>
-                <li className="flex items-start">
-                  <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">3</span>
-                  <span>الذهاب إلى قسم "API Keys" في لوحة التحكم</span>
-                </li>
-                <li className="flex items-start">
-                  <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-sm font-bold mr-3 mt-0.5">4</span>
-                  <span>إنشاء مفتاح API جديد ونسخه</span>
-                </li>
-              </ol>
-            </div>
+                  </p>
+                </div>
 
-            {/* API Key Input Form */}
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="apiKey" className="block text-gray-700 font-bold mb-3 text-lg">
-                  <i className="fas fa-key mr-2 text-amber-600"></i>
-                  مفتاح OpenRouter API
-                </label>
-                <Input
-                  id="apiKey"
-                  type="password"
-                  placeholder="sk-or-v1-..."
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="px-4 py-3 rounded-xl border-2 border-amber-300 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition duration-300 text-lg"
-                  disabled={isLoading}
-                />
-              </div>
+                {error && (
+                  <Alert variant="destructive" className="border-red-200 bg-red-50">
+                    <AlertDescription className="text-red-700 flex items-start">
+                      <i className="fas fa-exclamation-triangle text-red-500 ml-2 mt-1"></i>
+                      <span>{error}</span>
+                    </AlertDescription>
+                  </Alert>
+                )}
 
-              {error && (
-                <Alert className="border-red-200 bg-red-50">
-                  <i className="fas fa-exclamation-triangle text-red-600"></i>
-                  <AlertDescription className="text-red-700">
-                    <strong>خطأ:</strong> {error}
-                  </AlertDescription>
-                </Alert>
-              )}
+                <Button
+                  type="submit"
+                  disabled={isLoading || !apiKey.trim()}
+                  className="w-full px-6 py-4 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition duration-300 transform hover:scale-105 text-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+                  size="lg"
+                >
+                  {isTestingConnection ? (
+                    <div className="flex items-center">
+                      <span className="ml-2">جاري التحقق من المفتاح...</span>
+                      <span className="animate-pulse ml-2">🔍</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center">
+                      <i className="fas fa-check-circle ml-2"></i>
+                      <span>تفعيل التحليل الذكي</span>
+                    </div>
+                  )}
+                </Button>
+              </form>
+            )}
+          </CardContent>
 
-              <Button
-                type="submit"
-                disabled={isLoading || !apiKey.trim()}
-                className="w-full px-6 py-4 bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 text-white font-bold rounded-xl shadow-lg hover:shadow-xl transition duration-300 transform hover:scale-105 text-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isTestingConnection && <div className="loading-spinner ml-3"></div>}
-                <i className="fas fa-check-circle ml-3"></i>
-                <span>
-                  {isLoading ? "جاري التحقق من المفتاح..." : "تفعيل التحليل الذكي"}
-                </span>
-              </Button>
-            </form>
-
-            {/* Benefits */}
+          {/* Benefits Section */}
+          <div className="px-6 pb-6">
             <div className="bg-emerald-50 rounded-xl p-6 border border-emerald-200">
               <h3 className="font-bold text-emerald-800 mb-4 flex items-center">
-                <i className="fas fa-sparkles mr-2"></i>
+                <i className="fas fa-sparkles ml-2"></i>
                 ميزات التحليل الذكي
               </h3>
-              <ul className="space-y-2 text-emerald-700">
-                <li className="flex items-center">
-                  <i className="fas fa-check-circle text-emerald-500 mr-3"></i>
-                  تفسير روحي عميق للأسماء والأسئلة
+              <ul className="space-y-3">
+                <li className="flex items-start">
+                  <i className="fas fa-check-circle text-emerald-500 mt-1 ml-3"></i>
+                  <span>تفسير روحي عميق للأسماء والأسئلة</span>
                 </li>
-                <li className="flex items-center">
-                  <i className="fas fa-check-circle text-emerald-500 mr-3"></i>
-                  تحليل متقدم للأرقام والمعاني العددية
+                <li className="flex items-start">
+                  <i className="fas fa-check-circle text-emerald-500 mt-1 ml-3"></i>
+                  <span>تحليل متقدم للأرقام والمعاني العددية</span>
                 </li>
-                <li className="flex items-center">
-                  <i className="fas fa-check-circle text-emerald-500 mr-3"></i>
-                  توجيهات شخصية مخصصة للسائل
+                <li className="flex items-start">
+                  <i className="fas fa-check-circle text-emerald-500 mt-1 ml-3"></i>
+                  <span>توجيهات شخصية مخصصة للسائل</span>
                 </li>
-                <li className="flex items-center">
-                  <i className="fas fa-check-circle text-emerald-500 mr-3"></i>
-                  تحليل الطاقات والاتجاهات المستقبلية
+                <li className="flex items-start">
+                  <i className="fas fa-check-circle text-emerald-500 mt-1 ml-3"></i>
+                  <span>تحليل الطاقات والاتجاهات المستقبلية</span>
                 </li>
               </ul>
             </div>
+          </div>
 
-            {/* Security Note */}
+          {/* Security Note */}
+          <div className="px-6 pb-6">
             <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
               <p className="text-gray-600 text-sm flex items-start">
-                <i className="fas fa-shield-alt text-gray-500 mr-2 mt-0.5"></i>
+                <i className="fas fa-shield-alt text-gray-500 ml-2 mt-0.5"></i>
                 <span>
                   <strong>ملاحظة أمنية:</strong> مفتاح API يُحفظ محلياً في متصفحك فقط ولا يُرسل إلى خوادمنا للتخزين.
                   يُستخدم فقط لإجراء التحليل الذكي عبر خدمة OpenRouter.
                 </span>
               </p>
             </div>
-          </CardContent>
+          </div>
         </Card>
       </div>
     </div>

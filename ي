@@ -1,0 +1,24 @@
+# Navigate to your project directory
+cd "c:\Users\العراف\Downloads\DeepseekChatAnalyzer(2)\DeepseekChatAnalyzer"
+
+# Remove existing .git directory if it exists
+rm -r -force .git
+# Initialize a new Git repository
+git init
+
+# Add your files
+git add .
+
+# Make your first commit
+git commit -m "Initial commit"
+
+# Add the remote repository
+git remote add origin https://github.com/nmnmnlkl/amamamaam.git
+
+# Rename the default branch to main (if needed)
+git branch -M main
+git add server/routes.ts
+git commit -m "fix: add missing catch block in API key validation endpoint"
+git push
+# Push your code to GitHub
+git push -u origin main

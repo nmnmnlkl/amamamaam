@@ -53,21 +53,43 @@ export default function JafrCalculator() {
 
   const analysisMutation = useMutation({
     mutationFn: async (data: JafrAnalysisRequest): Promise<JafrAnalysisResponse> => {
-      const { success, data: responseData, error } = await jafrApi.analyze(data);
-      
-      if (!success) {
-        // Handle API key related errors
-        if (error?.includes('API') || error?.includes('مفتاح') || error?.includes('مصادقة')) {
-          localStorage.removeItem("openrouter_api_key");
-          sessionStorage.removeItem("openrouter_api_key");
-          setHasApiKey(false);
-          throw new Error(error || "مشكلة في مصادقة API. يرجى التأكد من صحة المفتاح.");
+      try {
+        const response = await jafrApi.analyze(data);
+        
+        if (!response.success) {
+          // Handle error response
+          const error = response.error || "حدث خطأ غير متوقع";
+          
+          // Handle API key related errors
+          if (error.includes('API') || error.includes('مفتاح') || error.includes('مصادقة') || 
+              error.includes('INVALID_API_KEY') || error.includes('MISSING_API_KEY')) {
+            localStorage.removeItem("openrouter_api_key");
+            sessionStorage.removeItem("openrouter_api_key");
+            setHasApiKey(false);
+            throw new Error(error || "مشكلة في مصادقة API. يرجى التأكد من صحة المفتاح.");
+          }
+          
+          // Handle rate limiting
+          if (error.includes('RATE_LIMIT_EXCEEDED')) {
+            throw new Error("تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد 30 دقيقة.");
+          }
+          
+          // Handle other errors
+          throw new Error(error);
         }
         
-        throw new Error(error || "حدث خطأ أثناء معالجة طلبك");
+        // If we get here, the response was successful
+        if (!response.data) {
+          throw new Error("لا توجد بيانات متاحة في الاستجابة");
+        }
+        
+        return response.data;
+          
+          // This line is unreachable due to the return statement above
+      } catch (error: any) {
+        console.error("Analysis error:", error);
+        throw error; // Re-throw to be handled by onError
       }
-      
-      return responseData as JafrAnalysisResponse;
     },
     onSuccess: (data: any) => {
       // Set the results with proper typing
@@ -120,20 +142,41 @@ export default function JafrCalculator() {
         errorMessage = error.message;
         
         // Handle API key related errors
-        if (error.message.includes('API') || error.message.includes('مفتاح')) {
+        if (error.message.includes('API') || error.message.includes('مفتاح') || 
+            error.message.includes('INVALID_API_KEY') || error.message.includes('MISSING_API_KEY')) {
           localStorage.removeItem("openrouter_api_key");
           sessionStorage.removeItem("openrouter_api_key");
           setHasApiKey(false);
+          
+          // Scroll to API key input
+          setTimeout(() => {
+            document.getElementById('api-key-input')?.scrollIntoView({ behavior: 'smooth' });
+          }, 300);
+        }
+        
+        // Handle rate limiting
+        if (error.message.includes('RATE_LIMIT_EXCEEDED')) {
+          errorMessage = "تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد 30 دقيقة.";
+        }
+        
+        // Handle server errors
+        if (error.message.includes('500') || error.message.includes('Internal Server Error')) {
+          errorMessage = "حدث خطأ في الخادم. يرجى المحاولة مرة أخرى لاحقًا.";
+        }
+        
+        // Handle timeout errors
+        if (error.message.includes('timeout') || error.message.includes('انتهت المهلة')) {
+          errorMessage = "انتهت مهلة الاتصال بالخادم. يرجى التحقق من اتصال الإنترنت والمحاولة مرة أخرى.";
         }
       }
       
       setError(errorMessage);
       setShowProgress(false);
       
-      // Auto-hide error after 10 seconds
+      // Auto-hide error after 15 seconds
       const errorTimeout = setTimeout(() => {
         setError("");
-      }, 10000);
+      }, 15000);
       
       return () => clearTimeout(errorTimeout);
     }
@@ -149,6 +192,18 @@ export default function JafrCalculator() {
       setError("يرجى كتابة سؤال أكثر تفصيلاً (على الأقل 10 أحرف)");
       return;
     }
+    
+    // Check if API key exists
+    const apiKey = localStorage.getItem("openrouter_api_key") || 
+                  sessionStorage.getItem("openrouter_api_key");
+                  
+    if (!apiKey) {
+      setError("يرجى إدخال مفتاح API أولاً");
+      setHasApiKey(false);
+      // Scroll to API key input
+      document.getElementById('api-key-input')?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
 
     setError("");
     setResults(null);
@@ -157,28 +212,47 @@ export default function JafrCalculator() {
 
     // Simulate progress updates
     const progressSteps = [
-      { percent: 20, text: "حساب القيم العددية للأسماء..." },
-      { percent: 50, text: "تحليل السياق بالذكاء الاصطناعي..." },
-      { percent: 80, text: "دمج النتائج وإنشاء التفسير المتكامل..." },
-      { percent: 100, text: "عرض النتائج النهائية..." }
+      { percent: 20, text: "جاري تحميل البيانات..." },
+      { percent: 40, text: "جاري التحقق من صحة المفتاح..." },
+      { percent: 60, text: "جاري تحليل البيانات..." },
+      { percent: 80, text: "جاري إنشاء التقرير..." },
+      { percent: 95, text: "جاري إعداد النتائج النهائية..." },
+      { percent: 100, text: "اكتمل التحليل بنجاح!" }
     ];
 
-    for (const step of progressSteps) {
+    // Animate progress
+    for (let i = 0; i < progressSteps.length; i++) {
+      const step = progressSteps[i];
       setProgress(step.percent);
       setProgressText(step.text);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Vary the delay based on the step
+      const delay = i < 2 ? 800 : (i < 4 ? 1500 : 2000);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Show a small success message when complete
+      if (i === progressSteps.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
     }
 
-    analysisMutation.mutate({
-      name: name.trim(),
-      mother: mother.trim(),
-      question: question.trim(),
-      options: {
-        deepAnalysis,
-        numerologyDetails,
-        contextualInterpretation
-      }
-    });
+    // Start the actual analysis
+    try {
+      analysisMutation.mutate({
+        name: name.trim(),
+        mother: mother.trim(),
+        question: question.trim(),
+        options: {
+          deepAnalysis,
+          numerologyDetails,
+          contextualInterpretation
+        }
+      });
+    } catch (error) {
+      console.error("Error starting analysis:", error);
+      setError("حدث خطأ أثناء بدء التحليل. يرجى المحاولة مرة أخرى.");
+      setShowProgress(false);
+    }
   };
 
   const nameAnalysis = name.length > 2 ? calculateBasicNumerology(name) : null;
