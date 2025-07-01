@@ -1,5 +1,5 @@
 [build]
-  command = "npm run build"
+  command = "npm install && npm run build"
   publish = "dist/public"
   functions = "netlify/functions"
 
@@ -7,10 +7,10 @@
   NODE_VERSION = "20"
   NODE_ENV = "production"
   VITE_API_URL = "/.netlify/functions"
+  # Install all dependencies including devDependencies
+  NPM_FLAGS = "--include=dev"
   # Disable Neon extension as it's not needed in the build step
-  # The actual database connection will be handled at runtime
   NETLIFY_USE_PNPM = "false"
-  NPM_FLAGS = "--no-optional"
 
 # API Proxying
 [[redirects]]
