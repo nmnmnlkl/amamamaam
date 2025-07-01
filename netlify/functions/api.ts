@@ -135,7 +135,18 @@ export const handler: Handler = async (event: HandlerEvent, context: HandlerCont
   }
 
   try {
-    const path = event.path.replace('/.netlify/functions/api', '');
+    // Handle paths with or without the /api prefix
+    let path = event.path;
+    
+    // Remove the function path
+    if (path.startsWith('/.netlify/functions/api')) {
+      path = path.replace('/.netlify/functions/api', '');
+    } else if (path.startsWith('/api')) {
+      path = path.replace('/api', '');
+    }
+    
+    // Handle empty path
+    if (path === '') path = '/';
     
     // Health check
     if (event.httpMethod === 'GET' && path === '/health') {

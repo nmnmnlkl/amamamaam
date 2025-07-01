@@ -12,12 +12,19 @@
   # Disable Neon extension as it's not needed in the build step
   NETLIFY_USE_PNPM = "false"
 
-# API Proxying
+# API Proxying - Remove the duplicate /api in the path
 [[redirects]]
   from = "/api/*"
   to = "/.netlify/functions/api/:splat"
   status = 200
   force = true
+  
+# Handle direct function calls without /api prefix
+[[redirects]]
+  from = "/*"
+  to = "/.netlify/functions/api"
+  status = 200
+  force = false
 
 # SPA Fallback - Handle all routes
 [[redirects]]
