@@ -1,6 +1,6 @@
 import { apiRequest } from "./queryClient";
 
-type ApiResponse<T> = {
+export type ApiResponse<T> = {
   data?: T;
   error?: string;
   success: boolean;
@@ -120,7 +120,8 @@ export const jafrApi = {
       { 
         requireAuth: true,
         headers: {
-          'X-API-Key': apiKey
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json'
         }
       }
     );

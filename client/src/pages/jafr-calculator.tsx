@@ -3,6 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ApiResponse } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -52,61 +53,81 @@ export default function JafrCalculator() {
   }, []);
 
   const analysisMutation = useMutation({
-    mutationFn: async (data: JafrAnalysisRequest): Promise<JafrAnalysisResponse> => {
-      try {
-        const response = await jafrApi.analyze(data);
+    mutationFn: async (data: JafrAnalysisRequest): Promise<AnalysisResults> => {
+      // Prepare the request data with the correct field names
+      const requestData = {
+        name: data.name,
+        mother: data.mother,
+        question: data.question,
+        options: data.options
+      };
+      
+      const response = await jafrApi.analyze(requestData);
+      
+      // If the response indicates an error
+      if (!response.success) {
+        const error = response.error || "حدث خطأ غير متوقع";
         
-        if (!response.success) {
-          // Handle error response
-          const error = response.error || "حدث خطأ غير متوقع";
-          
-          // Handle API key related errors
-          if (error.includes('API') || error.includes('مفتاح') || error.includes('مصادقة') || 
-              error.includes('INVALID_API_KEY') || error.includes('MISSING_API_KEY')) {
-            localStorage.removeItem("openrouter_api_key");
-            sessionStorage.removeItem("openrouter_api_key");
-            setHasApiKey(false);
-            throw new Error(error || "مشكلة في مصادقة API. يرجى التأكد من صحة المفتاح.");
-          }
-          
-          // Handle rate limiting
-          if (error.includes('RATE_LIMIT_EXCEEDED')) {
-            throw new Error("تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد 30 دقيقة.");
-          }
-          
-          // Handle other errors
-          throw new Error(error);
+        // Handle API key related errors
+        if (error.includes('API') || error.includes('مفتاح') || error.includes('مصادقة') || 
+            error.includes('INVALID_API_KEY') || error.includes('MISSING_API_KEY')) {
+          localStorage.removeItem("openrouter_api_key");
+          sessionStorage.removeItem("openrouter_api_key");
+          setHasApiKey(false);
+          throw new Error(error || "مشكلة في مصادقة API. يرجى التأكد من صحة المفتاح.");
         }
         
-        // If we get here, the response was successful
-        if (!response.data) {
-          throw new Error("لا توجد بيانات متاحة في الاستجابة");
+        // Handle rate limiting
+        if (error.includes('RATE_LIMIT_EXCEEDED')) {
+          throw new Error("تم تجاوز الحد المسموح من الطلبات. يرجى المحاولة بعد 30 دقيقة.");
         }
         
-        return response.data;
-          
-          // This line is unreachable due to the return statement above
-      } catch (error: any) {
-        console.error("Analysis error:", error);
-        throw error; // Re-throw to be handled by onError
+        // Handle other errors
+        throw new Error(error);
       }
-    },
-    onSuccess: (data: any) => {
-      // Set the results with proper typing
-      const responseData = data as AnalysisResults;
-      const resultsData: AnalysisResults = {
-        traditionalResults: responseData.traditionalResults || {
-          nameAnalysis: { total: 0, details: [] },
-          motherAnalysis: { total: 0, details: [] },
-          questionAnalysis: { total: 0, details: [] },
-          totalValue: 0,
-          reducedValue: 0,
-          wafqSize: 0
-        },
+      
+      // If we get here, the response was successful
+      // The response data is in the data property of the ApiResponse
+      const responseData = (response as ApiResponse<JafrAnalysisResponse>).data || {} as JafrAnalysisResponse;
+      
+      // Create default traditional results
+      const defaultTraditionalResults: TraditionalResults = {
+        nameAnalysis: { total: 0, details: [] },
+        motherAnalysis: { total: 0, details: [] },
+        questionAnalysis: { total: 0, details: [] },
+        totalValue: 0,
+        reducedValue: 0,
+        wafqSize: 0
+      };
+      
+      // Extract the response data with proper typing
+      const result: AnalysisResults = {
+        traditionalResults: responseData.traditionalResults || defaultTraditionalResults,
         aiAnalysis: responseData.aiAnalysis,
         combinedInterpretation: responseData.combinedInterpretation,
-        message: responseData.message || 'تم التحليل بنجاح',
-        success: responseData.success !== false // Default to true if not specified
+        message: 'message' in responseData ? (responseData as { message?: string }).message : 'تم التحليل بنجاح',
+        success: true
+      };
+      
+      return result;
+    },
+    onSuccess: (responseData: AnalysisResults) => {
+      // Create default traditional results
+      const defaultTraditionalResults: TraditionalResults = {
+        nameAnalysis: { total: 0, details: [] },
+        motherAnalysis: { total: 0, details: [] },
+        questionAnalysis: { total: 0, details: [] },
+        totalValue: 0,
+        reducedValue: 0,
+        wafqSize: 0
+      };
+      
+      // Set the results with proper typing
+      const resultsData: AnalysisResults = {
+        traditionalResults: responseData.traditionalResults || defaultTraditionalResults,
+        aiAnalysis: responseData.aiAnalysis,
+        combinedInterpretation: responseData.combinedInterpretation,
+        message: responseData.message || 'تم التحليل بنجاح'
       };
       
       setResults(resultsData);
@@ -116,7 +137,7 @@ export default function JafrCalculator() {
       // Log success message
       if (resultsData.message) {
         console.log("Analysis successful:", resultsData.message);
-      } else if (resultsData.success) {
+      } else {
         console.log("Analysis completed successfully");
       }
       
@@ -238,6 +259,7 @@ export default function JafrCalculator() {
 
     // Start the actual analysis
     try {
+      // Use the correct field name 'mother' as per the schema
       analysisMutation.mutate({
         name: name.trim(),
         mother: mother.trim(),
