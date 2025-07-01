@@ -7,6 +7,10 @@
   NODE_VERSION = "20"
   NODE_ENV = "production"
   VITE_API_URL = "/.netlify/functions"
+  # Disable Neon extension as it's not needed in the build step
+  # The actual database connection will be handled at runtime
+  NETLIFY_USE_PNPM = "false"
+  NPM_FLAGS = "--no-optional"
 
 # API Proxying
 [[redirects]]
