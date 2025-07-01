@@ -11,10 +11,10 @@ async function throwIfResNotOk(res: Response) {
 const getApiBaseUrl = () => {
   // In development, use the Vite proxy (if configured) or relative URL
   if (import.meta.env.DEV) {
-    return '/api';
+    return ''; // Vite proxy will handle the /api prefix
   }
   // In production, use the Netlify functions path
-  return '/.netlify/functions/api';
+  return '/.netlify/functions';
 };
 
 export async function apiRequest(
