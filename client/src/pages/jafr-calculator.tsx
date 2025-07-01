@@ -35,24 +35,52 @@ export default function JafrCalculator() {
 
   const analysisMutation = useMutation({
     mutationFn: async (data: JafrAnalysisRequest): Promise<JafrAnalysisResponse> => {
-      // Include API key in the request
-      const apiKey = localStorage.getItem("openrouter_api_key");
+      // Get API key from localStorage or sessionStorage
+      const apiKey = localStorage.getItem("openrouter_api_key") || 
+                    sessionStorage.getItem("openrouter_api_key");
+      
+      if (!apiKey) {
+        throw new Error("لم يتم العثور على مفتاح API. يرجى إدخال مفتاح API صالح.");
+      }
+
       const requestData = { 
         ...data, 
         apiKey: apiKey 
       };
       
       const response = await apiRequest("POST", "/api/jafr/analyze", requestData);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "فشل في تحليل البيانات");
+      }
+      
       return response.json();
     },
     onSuccess: (data) => {
       setResults(data);
       setShowProgress(false);
       setError("");
+      // Scroll to results
+      setTimeout(() => {
+        const resultsElement = document.getElementById('analysis-results');
+        if (resultsElement) {
+          resultsElement.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
     },
     onError: (error: any) => {
-      setError(error.message || "حدث خطأ في التحليل");
+      console.error("Analysis error:", error);
+      const errorMessage = error.message || "حدث خطأ غير متوقع أثناء التحليل";
+      setError(errorMessage);
       setShowProgress(false);
+      
+      // If the error is related to API key, clear the stored key
+      if (error.message?.includes('API') || error.message?.includes('مفتاح')) {
+        localStorage.removeItem("openrouter_api_key");
+        sessionStorage.removeItem("openrouter_api_key");
+        setHasApiKey(false);
+      }
     }
   });
 

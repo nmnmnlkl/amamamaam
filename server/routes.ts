@@ -23,7 +23,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const testRequest = await fetch("https://openrouter.ai/api/v1/models", {
         headers: {
           "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://jafr-analyzer.com",
+          "X-Title": "نظام الجفر الذكي"
         }
       });
 
@@ -33,17 +35,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
           success: true 
         });
       } else {
+        const errorData = await testRequest.json().catch(() => ({}));
+        const errorMessage = errorData.error?.message || "مفتاح API غير صحيح أو غير مفعل";
+        
+        console.error("API key test failed:", errorMessage);
         res.status(400).json({ 
-          message: "مفتاح API غير صحيح أو غير مفعل",
+          message: errorMessage,
           success: false 
         });
       }
       
     } catch (error) {
       console.error("API key test error:", error);
+      const errorMessage = error instanceof Error ? error.message : "حدث خطأ غير متوقع";
       res.status(500).json({ 
-        message: "حدث خطأ في التحقق من مفتاح API",
-        success: false 
+        message: `حدث خطأ في التحقق من مفتاح API: ${errorMessage}`,
+        success: false,
+        error: errorMessage
       });
     }
   });

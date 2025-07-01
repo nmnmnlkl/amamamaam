@@ -19,8 +19,15 @@ export default function ApiKeySetup({ onApiKeySet }: ApiKeySetupProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!apiKey.trim()) {
+    const trimmedKey = apiKey.trim();
+    if (!trimmedKey) {
       setError("يرجى إدخال مفتاح API");
+      return;
+    }
+
+    // Basic validation for API key format
+    if (!trimmedKey.startsWith("sk-")) {
+      setError("يجب أن يبدأ مفتاح API بـ 'sk-'");
       return;
     }
 
@@ -31,19 +38,23 @@ export default function ApiKeySetup({ onApiKeySet }: ApiKeySetupProps) {
     try {
       // Test the API key by making a test request
       const response = await apiRequest("POST", "/api/test-api-key", { 
-        apiKey: apiKey.trim() 
+        apiKey: trimmedKey
       });
       
       if (response.ok) {
         // Store the API key in localStorage for this session
-        localStorage.setItem("openrouter_api_key", apiKey.trim());
+        localStorage.setItem("openrouter_api_key", trimmedKey);
+        // Also store it in sessionStorage for immediate use
+        sessionStorage.setItem("openrouter_api_key", trimmedKey);
         onApiKeySet();
       } else {
-        const errorData = await response.json();
-        setError(errorData.message || "مفتاح API غير صحيح");
+        const errorData = await response.json().catch(() => ({}));
+        setError(errorData.message || "مفتاح API غير صحيح أو غير مفعل");
       }
     } catch (error: any) {
-      setError("حدث خطأ في التحقق من مفتاح API");
+      console.error("API key validation error:", error);
+      const errorMessage = error.message || "حدث خطأ في الاتصال بالخادم";
+      setError(`فشل التحقق من المفتاح: ${errorMessage}`);
     } finally {
       setIsLoading(false);
       setIsTestingConnection(false);
