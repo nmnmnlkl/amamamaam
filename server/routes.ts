@@ -124,6 +124,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Jafr Analysis Endpoint
+  app.post("/api/jafr/analyze", async (req, res) => {
+    try {
+      const apiKey = req.headers['x-api-key'] as string || 
+                   req.headers['authorization']?.replace('Bearer ', '');
+      
+      if (!apiKey) {
+        return res.status(400).json({ 
+          success: false, 
+          message: "مطلوب مفتاح API",
+          error: "MISSING_API_KEY"
+        });
+      }
+      
+      // Validate request body against schema
+      const validation = jafrAnalysisRequestSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({
+          success: false,
+          message: "بيانات الطلب غير صالحة",
+          error: validation.error.format()
+        });
+      }
+      
+      const { name, mother, question, options } = validation.data;
+      
+      // Calculate traditional results
+      const nameAnalysis = calculateBasicNumerology(name);
+      const motherAnalysis = calculateBasicNumerology(mother);
+      const questionAnalysis = calculateBasicNumerology(question);
+      
+      const totalValue = nameAnalysis.total + motherAnalysis.total + questionAnalysis.total;
+      const reducedValue = reduceToSingleDigit(totalValue);
+      const wafqSize = calculateWafqSize(reducedValue);
+      
+      const traditionalResults: TraditionalResults = {
+        nameAnalysis,
+        motherAnalysis,
+        questionAnalysis,
+        totalValue,
+        reducedValue,
+        wafqSize
+      };
+      
+      let aiAnalysis = null;
+      let combinedInterpretation = null;
+      
+      // Only perform AI analysis if deepAnalysis is enabled
+      if (options?.deepAnalysis !== false) {
+        try {
+          // Perform AI analysis
+          aiAnalysis = await aiService.analyzeJafrContext(
+            { name, mother, question, options },
+            traditionalResults,
+            apiKey
+          );
+          
+          // Generate combined interpretation
+          combinedInterpretation = await aiService.generateCombinedInterpretation(
+            traditionalResults,
+            aiAnalysis,
+            apiKey
+          );
+        } catch (error) {
+          console.error('AI Analysis Error:', error);
+          // Continue with traditional results even if AI fails
+        }
+      }
+      
+      // Return the analysis results
+      return res.json({
+        success: true,
+        message: "تم تحليل البيانات بنجاح",
+        data: {
+          traditionalResults,
+          aiAnalysis,
+          combinedInterpretation
+        }
+      });
+      
+    } catch (error) {
+      console.error('Analysis Error:', error);
+      return res.status(500).json({
+        success: false,
+        message: "حدث خطأ أثناء معالجة الطلب",
+        error: error instanceof Error ? error.message : 'خطأ غير معروف'
+      });
+    }
+  });
+
   // API Key Validation Endpoint
   app.post("/api/validate-key", async (req, res) => {
     try {
